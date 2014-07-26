@@ -103,6 +103,8 @@ struct virtnet_info {
 	struct send_queue *sq;
 	struct receive_queue *rq;
 	unsigned int status;
+	unsigned long flags;
+	atomic_t lb_count;
 
 	/* Max # of queue pairs supported by the device */
 	u16 max_queue_pairs;
@@ -435,6 +437,18 @@ err_buf:
 	return NULL;
 }
 
+void virtnet_check_lb_frame(struct virtnet_info *vi,
+					struct sk_buff *skb)
+{
+	unsigned int frame_size = skb->len;
+
+	if ((*(skb->data + 3) == 0xFF) &&
+		(*(skb->data + frame_size / 2 + 10) == 0xBE) &&
+		(*(skb->data + frame_size / 2 + 12) == 0xAF)) {
+			atomic_dec(&vi->lb_count);
+			return;
+	}
+}
 static void receive_buf(struct receive_queue *rq, void *buf, unsigned int len)
 {
 	struct virtnet_info *vi = rq->vq->vdev->priv;
@@ -484,7 +498,12 @@ static void receive_buf(struct receive_queue *rq, void *buf, unsigned int len)
 	} else if (hdr->hdr.flags & VIRTIO_NET_HDR_F_DATA_VALID) {
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
-
+	/* loopback self test for ethtool */
+	if (test_bit(__VIRTNET_TESTING, &vi->flags)) {
+		virtnet_check_lb_frame(vi, skb);
+		dev_kfree_skb_any(skb);
+		return;
+	}
 	skb->protocol = eth_type_trans(skb, dev);
 	pr_debug("Receiving skb proto 0x%04x len %i type %i\n",
 		 ntohs(skb->protocol), skb->len, skb->pkt_type);
@@ -764,6 +783,9 @@ static int virtnet_open(struct net_device *dev)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
 	int i;
+	/* disallow open during test */
+	if (test_bit(__VIRTNET_TESTING, &vi->flags))
+		return -EBUSY;
 
 	for (i = 0; i < vi->max_queue_pairs; i++) {
 		if (i < vi->curr_queue_pairs)
@@ -1313,13 +1335,162 @@ static void virtnet_get_channels(struct net_device *dev,
 	channels->tx_count = 0;
 	channels->other_count = 0;
 }
+static int virtnet_reset(struct virtnet_info *vi);
 
+static void virtnet_create_lb_frame(struct sk_buff *skb,
+					unsigned int frame_size)
+{
+	memset(skb->data, 0xFF, frame_size);
+	frame_size &= ~1;
+	memset(&skb->data[frame_size / 2], 0xAA, frame_size / 2 - 1);
+	memset(&skb->data[frame_size / 2 + 10], 0xBE, 1);
+	memset(&skb->data[frame_size / 2 + 12], 0xAF, 1);
+}
+
+static void virtnet_start_loopback(struct virtnet_info *vi)
+{
+	if (netif_carrier_ok(vi->dev)) {
+		vi->status = VIRTIO_NET_S_LINK_UP;
+		netif_carrier_off(vi->dev);
+	} else
+		vi->status &= ~VIRTIO_NET_S_LINK_UP;
+}
+
+static int virtnet_run_loopback_test(struct virtnet_info *vi)
+{
+	int i;
+	netdev_tx_t rc;
+	struct sk_buff *skb;
+	unsigned int size = 1024;
+
+	for (i = 0; i < 100; i++) {
+		skb = netdev_alloc_skb(vi->dev, size);
+		if (!skb)
+			return -ENOMEM;
+
+		skb->queue_mapping = 0;
+		skb_put(skb, size);
+		virtnet_create_lb_frame(skb, size);
+
+		memcpy(skb->data, vi->dev->dev_addr, ETH_ALEN);
+		rc = start_xmit(skb, vi->dev);
+		if (rc != NETDEV_TX_OK)
+			return -EPIPE;
+		atomic_inc(&vi->lb_count);
+	}
+	/* Give queue time to settle before testing results. */
+	msleep(20);
+	void *buf;
+	int len;
+	while ((buf = virtqueue_get_buf(vi->rq->vq, &len)) != NULL) {
+
+		receive_buf(vi->rq, buf, len);
+}
+	return atomic_read(&vi->lb_count) ? -EIO : 0;
+}
+
+static void virtnet_stop_loopback(struct virtnet_info *vi)
+{
+	if (vi->status & VIRTIO_NET_S_LINK_UP) {
+		netif_carrier_on(vi->dev);
+		netif_tx_wake_all_queues(vi->dev);
+	}
+}
+
+static int virtnet_loopback_test(struct virtnet_info *vi, u64 *data)
+{
+	virtnet_start_loopback(vi);
+	*data = virtnet_run_loopback_test(vi);
+	virtnet_stop_loopback(vi);
+	return *data;
+}
+
+static void virtnet_feature_neg_test(struct virtnet_info *vi)
+{
+	struct virtio_device *dev = vi->vdev;
+	struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+	int i;
+	u32 device_features;
+	
+	/* Figure out what features the device supports. */
+	device_features = dev->config->get_features(dev);
+
+	/* Features supported by both device and driver into dev->features. */
+	memset(dev->features, 0, sizeof(dev->features));
+	for (i = 0; i < drv->feature_table_size; i++) {
+		unsigned int f = drv->feature_table[i];
+		BUG_ON(f >= 32);
+		if (device_features & (1 << f))
+			set_bit(f, dev->features);
+	}
+
+	/* Transport features always preserved to pass to finalize_features. */
+	for (i = VIRTIO_TRANSPORT_F_START; i < VIRTIO_TRANSPORT_F_END; i++)
+		if (device_features & (1 << i))
+			set_bit(i, dev->features);
+
+	dev->config->finalize_features(dev);
+	
+}
+
+static void add_status(struct virtio_device *dev, unsigned status)
+{
+	dev->config->set_status(dev, dev->config->get_status(dev) | status);
+}
+ 
+
+
+static int virtnet_get_sset_count(struct net_device *netdev, int sset)
+{
+	switch (sset) {
+	case ETH_SS_TEST:
+		return VIRTNET_NUM_TEST;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static void virtnet_get_strings(struct net_device *dev, u32 stringset, u8 *buf)
+{
+	switch (stringset) {
+		case ETH_SS_TEST:
+			memcpy(buf, &virtnet_gstrings_test, sizeof(virtnet_gstrings_test));
+			break;
+		default:
+			break;
+	}
+}
+
+static void virtnet_self_test(struct net_device *netdev,
+				struct ethtool_test *eth_test, u64 *data)
+{
+	struct virtnet_info *vi = netdev_priv(netdev);
+	bool if_running = netif_running(netdev);
+	
+	set_bit(__VIRTNET_TESTING, &vi->flags);
+	memset(data, 0, sizeof(u64) * VIRTNET_NUM_TEST);
+	if (if_running) {
+		if (eth_test->flags == ETH_TEST_FL_OFFLINE) {
+			if (virtnet_loopback_test(vi, &data[VIRTNET_LOOPBACK_TEST]))
+				eth_test->flags |= ETH_TEST_FL_FAILED;
+			virtnet_feature_neg_test(vi);
+			virtnet_reset(vi);
+		}
+		clear_bit(__VIRTNET_TESTING, &vi->flags);
+	} else {
+		dev_warn(&vi->dev->dev, "Failed to set MAC filter table.\n");
+		eth_test->flags |= ETH_TEST_FL_FAILED;
+	}
+}
 static const struct ethtool_ops virtnet_ethtool_ops = {
 	.get_drvinfo = virtnet_get_drvinfo,
 	.get_link = ethtool_op_get_link,
 	.get_ringparam = virtnet_get_ringparam,
 	.set_channels = virtnet_set_channels,
 	.get_channels = virtnet_get_channels,
+	.self_test = virtnet_self_test,
+	.get_strings		= virtnet_get_strings,
+	.get_sset_count = virtnet_get_sset_count,
 };
 
 #define MIN_MTU 68
@@ -1902,6 +2073,48 @@ static int virtnet_restore(struct virtio_device *vdev)
 }
 #endif
 
+static int virtnet_reset(struct virtnet_info *vi)
+{
+	int i, err;
+	u64 data;
+	struct virtio_device *dev = vi->vdev;
+	struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+	dev->config->reset(dev);
+
+	/* Acknowledge that we've seen the device. */
+	add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	
+	u32 device_features;
+
+	/* We have a driver! */
+	add_status(dev, VIRTIO_CONFIG_S_DRIVER);
+
+	/* Figure out what features the device supports. */
+	device_features = dev->config->get_features(dev);
+
+	/* Features supported by both device and driver into dev->features. */
+	memset(dev->features, 0, sizeof(dev->features));
+	for (i = 0; i < drv->feature_table_size; i++) {
+		unsigned int f = drv->feature_table[i];
+		BUG_ON(f >= 32);
+		if (device_features & (1 << f))
+			set_bit(f, dev->features);
+	}
+
+	/* Transport features always preserved to pass to finalize_features. */
+	for (i = VIRTIO_TRANSPORT_F_START; i < VIRTIO_TRANSPORT_F_END; i++)
+		if (device_features & (1 << i))
+			set_bit(i, dev->features);
+
+	dev->config->finalize_features(dev);
+
+	vi->status = VIRTIO_NET_S_LINK_UP;
+	netif_carrier_on(dev);
+	add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
+	if (drv->scan)
+		drv->scan(dev);
+	return 0;
+}
 static struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_NET, VIRTIO_DEV_ANY_ID },
 	{ 0 },
