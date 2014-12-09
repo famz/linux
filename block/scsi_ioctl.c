@@ -346,11 +346,17 @@ static int sg_io(struct request_queue *q, struct gendisk *bd_disk,
 		iov_iter_init(&i, rq_data_dir(rq), iov, hdr->iovec_count,
 			      min_t(unsigned, ret, hdr->dxfer_len));
 
+<<<<<<< HEAD
 		ret = blk_rq_map_user_iov(q, rq, NULL, &i, GFP_KERNEL);
+=======
+		ret = blk_rq_map_user_iov(q, rq, NULL, (struct sg_iovec *) iov,
+					  hdr->iovec_count,
+					  iov_data_len, GFP_KERNEL | __GFP_ZERO);
+>>>>>>> scsi: Don't fill dirty page content in the SG_IO buffer
 		kfree(iov);
 	} else if (hdr->dxfer_len)
 		ret = blk_rq_map_user(q, rq, NULL, hdr->dxferp, hdr->dxfer_len,
-				      GFP_KERNEL);
+				      GFP_KERNEL | __GFP_ZERO);
 
 	if (ret)
 		goto out_free_cdb;
