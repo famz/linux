@@ -110,6 +110,9 @@ struct virtio_scsi {
 	/* CPU hotplug notifier */
 	struct notifier_block nb;
 
+	/* Protect the hotplug/unplug event handling */
+	struct mutex scan_lock;
+
 	/* Protected by event_vq lock */
 	bool stop_events;
 
@@ -377,6 +380,7 @@ static void virtscsi_handle_event(struct work_struct *work)
 	struct virtio_scsi *vscsi = event_node->vscsi;
 	struct virtio_scsi_event *event = &event_node->event;
 
+	mutex_lock(&vscsi->scan_lock);
 	if (event->event &
 	    cpu_to_virtio32(vscsi->vdev, VIRTIO_SCSI_T_EVENTS_MISSED)) {
 		event->event &= ~cpu_to_virtio32(vscsi->vdev,
@@ -397,6 +401,7 @@ static void virtscsi_handle_event(struct work_struct *work)
 		pr_err("Unsupport virtio scsi event %x\n", event->event);
 	}
 	virtscsi_kick_event(vscsi, event_node);
+	mutex_unlock(&vscsi->scan_lock);
 }
 
 static void virtscsi_complete_event(struct virtio_scsi *vscsi, void *buf)
@@ -894,6 +899,7 @@ static int virtscsi_init(struct virtio_device *vdev,
 	const char **names;
 	struct virtqueue **vqs;
 
+	mutex_init(&vscsi->scan_lock);
 	num_vqs = vscsi->num_queues + VIRTIO_SCSI_VQ_BASE;
 	vqs = kmalloc(num_vqs * sizeof(struct virtqueue *), GFP_KERNEL);
 	callbacks = kmalloc(num_vqs * sizeof(vq_callback_t *), GFP_KERNEL);
