@@ -1570,7 +1570,7 @@ static int ep_send_events(struct eventpoll *ep,
  *          error code, in case of error.
  */
 static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
-		   int maxevents, const ktime_t timeout)
+		   int maxevents, int clockid, const ktime_t timeout)
 {
 	int res = 0, eavail, timed_out = 0;
 	unsigned long flags;
@@ -1578,6 +1578,8 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 	wait_queue_t wait;
 	ktime_t expires, *to = NULL;
 
+	if (clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME)
+		return -EINVAL;
 	if (!ktime_to_ns(timeout)) {
 		/*
 		 * Avoid the unnecessary trip to the wait queue loop, if the
@@ -1624,7 +1626,8 @@ fetch_events:
 			}
 
 			spin_unlock_irqrestore(&ep->lock, flags);
-			if (!schedule_hrtimeout_range(to, slack, HRTIMER_MODE_ABS))
+			if (!schedule_hrtimeout_range_clock(to, slack,
+						HRTIMER_MODE_ABS, clockid))
 				timed_out = 1;
 
 			spin_lock_irqsave(&ep->lock, flags);
@@ -1945,7 +1948,8 @@ error_return:
 }
 
 static inline int epoll_wait_do(int epfd, struct epoll_event __user *events,
-				int maxevents, const ktime_t timeout)
+				int maxevents, int clockid,
+				const ktime_t timeout)
 {
 	int error;
 	struct fd f;
@@ -1979,7 +1983,7 @@ static inline int epoll_wait_do(int epfd, struct epoll_event __user *events,
 	ep = f.file->private_data;
 
 	/* Time to fish for events ... */
-	error = ep_poll(ep, events, maxevents, timeout);
+	error = ep_poll(ep, events, maxevents, clockid, timeout);
 
 error_fput:
 	fdput(f);
@@ -1994,12 +1998,13 @@ SYSCALL_DEFINE4(epoll_wait, int, epfd, struct epoll_event __user *, events,
 		int, maxevents, int, timeout)
 {
 	ktime_t kt = ms_to_ktime(timeout);
-	return epoll_wait_do(epfd, events, maxevents, kt);
+	return epoll_wait_do(epfd, events, maxevents, CLOCK_MONOTONIC, kt);
 }
 
 static inline int epoll_pwait_do(int epfd, struct epoll_event __user *events,
-				 int maxevents, ktime_t timeout,
-				 sigset_t *sigmask, size_t sigsetsize)
+				 int maxevents,
+				 int clockid, ktime_t timeout,
+				 sigset_t *sigmask)
 {
 	int error;
 	sigset_t sigsaved;
@@ -2013,7 +2018,7 @@ static inline int epoll_pwait_do(int epfd, struct epoll_event __user *events,
 		set_current_blocked(sigmask);
 	}
 
-	error = epoll_wait_do(epfd, events, maxevents, timeout);
+	error = epoll_wait_do(epfd, events, maxevents, clockid, timeout);
 
 	/*
 	 * If we changed the signal mask, we need to restore the original one.
@@ -2050,8 +2055,8 @@ SYSCALL_DEFINE6(epoll_pwait, int, epfd, struct epoll_event __user *, events,
 		if (copy_from_user(&ksigmask, sigmask, sizeof(ksigmask)))
 			return -EFAULT;
 	}
-	return epoll_pwait_do(epfd, events, maxevents, kt,
-			      sigmask ? &ksigmask : NULL, sigsetsize);
+	return epoll_pwait_do(epfd, events, maxevents, CLOCK_MONOTONIC, kt,
+			      sigmask ? &ksigmask : NULL);
 }
 
 #ifdef CONFIG_COMPAT
@@ -2073,8 +2078,8 @@ COMPAT_SYSCALL_DEFINE6(epoll_pwait, int, epfd,
 		sigset_from_compat(&ksigmask, &csigmask);
 	}
 
-	return epoll_pwait_do(epfd, events, maxevents, kt,
-			      sigmask ? &ksigmask : NULL, sigsetsize);
+	return epoll_pwait_do(epfd, events, maxevents, CLOCK_MONOTONIC, kt,
+			      sigmask ? &ksigmask : NULL);
 }
 #endif
 
