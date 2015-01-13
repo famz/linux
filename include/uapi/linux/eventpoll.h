@@ -18,6 +18,8 @@
 #include <linux/fcntl.h>
 #include <linux/types.h>
 
+#include <linux/signal.h>
+
 /* Flags for epoll_create1.  */
 #define EPOLL_CLOEXEC O_CLOEXEC
 
@@ -59,6 +61,15 @@
 struct epoll_event {
 	__u32 events;
 	__u64 data;
+} EPOLL_PACKED;
+
+struct epoll_ctl_cmd {
+	int flags;
+	int op;
+	int fd;
+	__u32 events;
+	__u64 data;
+	int result;
 } EPOLL_PACKED;
 
 #ifdef CONFIG_PM_SLEEP

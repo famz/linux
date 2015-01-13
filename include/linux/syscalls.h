@@ -12,6 +12,7 @@
 #define _LINUX_SYSCALLS_H
 
 struct epoll_event;
+struct epoll_ctl_cmd;
 struct iattr;
 struct inode;
 struct iocb;
@@ -634,6 +635,9 @@ asmlinkage long sys_epoll_pwait(int epfd, struct epoll_event __user *events,
 				int maxevents, int timeout,
 				const sigset_t __user *sigmask,
 				size_t sigsetsize);
+asmlinkage long sys_epoll_ctl_batch(int epfd, int flags,
+				    int ncmds,
+				    struct epoll_ctl_cmd __user *cmds);
 asmlinkage long sys_gethostname(char __user *name, int len);
 asmlinkage long sys_sethostname(char __user *name, int len);
 asmlinkage long sys_setdomainname(char __user *name, int len);

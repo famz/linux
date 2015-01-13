@@ -99,6 +99,8 @@
 
 #define EP_MAX_EVENTS (INT_MAX / sizeof(struct epoll_event))
 
+#define EP_MAX_BATCH (INT_MAX / sizeof(struct epoll_ctl_cmd))
+
 #define EP_UNACTIVE_PTR ((void *) -1L)
 
 #define EP_ITEM_COST (sizeof(struct epitem) + sizeof(struct eppoll_entry))
@@ -2067,6 +2069,54 @@ SYSCALL_DEFINE6(epoll_pwait, int, epfd, struct epoll_event __user *, events,
 	}
 	return epoll_pwait_do(epfd, events, maxevents, CLOCK_MONOTONIC, kt,
 			      sigmask ? &ksigmask : NULL);
+}
+
+SYSCALL_DEFINE4(epoll_ctl_batch, int, epfd, int, flags,
+		int, ncmds, struct epoll_ctl_cmd __user *, cmds)
+{
+	struct epoll_ctl_cmd *kcmds = NULL;
+	int i, ret = 0;
+	size_t cmd_size;
+
+	if (flags)
+		return -EINVAL;
+	if (!cmds || ncmds <= 0 || ncmds > EP_MAX_BATCH)
+		return -EINVAL;
+	cmd_size = sizeof(struct epoll_ctl_cmd) * ncmds;
+	/* TODO: optimize for small arguments like select/poll with a stack
+	 * allocated buffer */
+
+	kcmds = kmalloc(cmd_size, GFP_KERNEL);
+	if (!kcmds)
+		return -ENOMEM;
+	if (copy_from_user(kcmds, cmds, cmd_size)) {
+		ret = -EFAULT;
+		goto out;
+	}
+	for (i = 0; i < ncmds; i++) {
+		struct epoll_event ev = (struct epoll_event) {
+			.events = kcmds[i].events,
+			.data = kcmds[i].data,
+		};
+		if (kcmds[i].flags) {
+			kcmds[i].result = -EINVAL;
+			goto copy;
+		}
+		kcmds[i].result = ep_ctl_do(epfd, kcmds[i].op,
+					    kcmds[i].fd, ev);
+		if (kcmds[i].result)
+			goto copy;
+		ret++;
+	}
+copy:
+	/* We lose the number of succeeded commands in favor of returning
+	 * -EFAULT, but in this case the application will want to fix the
+	 *  memory bug first. */
+	if (copy_to_user(cmds, kcmds, cmd_size))
+		ret = -EFAULT;
+out:
+	kfree(kcmds);
+	return ret;
 }
 
 #ifdef CONFIG_COMPAT
