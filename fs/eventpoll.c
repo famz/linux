@@ -2085,7 +2085,6 @@ SYSCALL_DEFINE4(epoll_ctl_batch, int, epfd, int, flags,
 	cmd_size = sizeof(struct epoll_ctl_cmd) * ncmds;
 	/* TODO: optimize for small arguments like select/poll with a stack
 	 * allocated buffer */
-
 	kcmds = kmalloc(cmd_size, GFP_KERNEL);
 	if (!kcmds)
 		return -ENOMEM;
@@ -2117,6 +2116,44 @@ copy:
 out:
 	kfree(kcmds);
 	return ret;
+}
+
+SYSCALL_DEFINE5(epoll_pwait1, int, epfd, int, flags,
+		struct epoll_event __user *, events,
+		int, maxevents,
+		struct epoll_wait_params __user *, params)
+{
+	struct epoll_wait_params p;
+	ktime_t kt = { 0 };
+	sigset_t sigmask;
+	struct timespec timeout;
+
+	if (flags)
+		return -EINVAL;
+	if (!params)
+		return -EINVAL;
+	if (copy_from_user(&p, params, sizeof(p)))
+		return -EFAULT;
+	if (p.size != sizeof(p))
+		return -EINVAL;
+	if (p.sigmask) {
+		if (copy_from_user(&sigmask, p.sigmask, sizeof(sigmask)))
+			return -EFAULT;
+		if (p.sigsetsize != sizeof(p.sigmask))
+			return -EINVAL;
+	}
+	if (p.timeout) {
+		if (copy_from_user(&timeout, p.timeout, sizeof(timeout)))
+			return -EFAULT;
+		if (!timespec_valid(&timeout))
+			return -EINVAL;
+		kt = timespec_to_ktime(timeout);
+	} else {
+		kt = ns_to_ktime(-1);
+	}
+
+	return epoll_pwait_do(epfd, events, maxevents, p.clockid,
+			      kt, p.sigmask ? &sigmask : NULL);
 }
 
 #ifdef CONFIG_COMPAT

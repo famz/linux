@@ -13,6 +13,7 @@
 
 struct epoll_event;
 struct epoll_ctl_cmd;
+struct epoll_wait_params;
 struct iattr;
 struct inode;
 struct iocb;
@@ -635,6 +636,10 @@ asmlinkage long sys_epoll_pwait(int epfd, struct epoll_event __user *events,
 				int maxevents, int timeout,
 				const sigset_t __user *sigmask,
 				size_t sigsetsize);
+asmlinkage long sys_epoll_pwait1(int epfd, int flags,
+				 struct epoll_event __user *events,
+				 int maxevents,
+				 struct epoll_wait_params __user *params);
 asmlinkage long sys_epoll_ctl_batch(int epfd, int flags,
 				    int ncmds,
 				    struct epoll_ctl_cmd __user *cmds);

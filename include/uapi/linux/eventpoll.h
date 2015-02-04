@@ -72,6 +72,14 @@ struct epoll_ctl_cmd {
 	int result;
 } EPOLL_PACKED;
 
+struct epoll_wait_params {
+	int size;
+	int clockid;
+	struct timespec *timeout;
+	sigset_t *sigmask;
+	size_t sigsetsize;
+} EPOLL_PACKED;
+
 #ifdef CONFIG_PM_SLEEP
 static inline void ep_take_care_of_epollwakeup(struct epoll_event *epev)
 {
