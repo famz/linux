@@ -330,6 +330,7 @@
 321	common	bpf			sys_bpf
 322	64	execveat		stub_execveat
 323	64	epoll_ctl_batch		sys_epoll_ctl_batch
+324	64	epoll_pwait1		sys_epoll_pwait1
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact
