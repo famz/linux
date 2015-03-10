@@ -452,6 +452,12 @@ asmlinkage long compat_sys_epoll_pwait(int epfd,
 			const compat_sigset_t __user *sigmask,
 			compat_size_t sigsetsize);
 
+struct compat_epoll_wait_params;
+asmlinkage long compat_sys_epoll_pwait1(int epfd, int flags,
+			struct epoll_event __user *events,
+			int maxevents,
+			struct compat_epoll_wait_params __user *params);
+
 asmlinkage long compat_sys_utime(const char __user *filename,
 				 struct compat_utimbuf __user *t);
 asmlinkage long compat_sys_utimensat(unsigned int dfd,

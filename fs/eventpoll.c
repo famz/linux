@@ -2178,6 +2178,56 @@ COMPAT_SYSCALL_DEFINE6(epoll_pwait, int, epfd,
 	return epoll_pwait_do(epfd, events, maxevents, CLOCK_MONOTONIC, kt,
 			      sigmask ? &ksigmask : NULL);
 }
+
+struct compat_epoll_wait_params {
+	int size;
+	int clockid;
+	compat_uptr_t timeout;
+	compat_uptr_t sigmask;
+	compat_size_t sigsetsize;
+} EPOLL_PACKED;
+
+COMPAT_SYSCALL_DEFINE5(epoll_pwait1, int, epfd, int, flags,
+		       struct epoll_event __user *, events,
+		       int, maxevents,
+		       struct compat_epoll_wait_params __user *, params)
+{
+	struct compat_epoll_wait_params p;
+
+	ktime_t kt = { 0 };
+	sigset_t sigmask;
+	compat_sigset_t compat_sigmask;
+	struct timespec timeout;
+
+	if (flags)
+		return -EINVAL;
+	if (!params)
+		return -EINVAL;
+	if (copy_from_user(&p, params, sizeof(p)))
+		return -EFAULT;
+	if (p.size != sizeof(p))
+		return -EINVAL;
+	if (p.sigmask) {
+		if (copy_from_user(&compat_sigmask, compat_ptr(p.sigmask),
+				   sizeof(sigmask)))
+			return -EFAULT;
+		if (p.sigsetsize != sizeof(p.sigmask))
+			return -EINVAL;
+		sigset_from_compat(&sigmask, &compat_sigmask);
+	}
+	if (p.timeout) {
+		if (compat_get_timespec(&timeout, compat_ptr(p.timeout)))
+			return -EFAULT;
+		if (!timespec_valid(&timeout))
+			return -EINVAL;
+		kt = timespec_to_ktime(timeout);
+	} else {
+		kt = ns_to_ktime(-1);
+	}
+
+	return epoll_pwait_do(epfd, events, maxevents, p.clockid,
+			      kt, p.sigmask ? &sigmask : NULL);
+}
 #endif
 
 static int __init eventpoll_init(void)
