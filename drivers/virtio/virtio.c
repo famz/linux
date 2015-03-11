@@ -269,6 +269,19 @@ static int virtio_dev_remove(struct device *_d)
 	return 0;
 }
 
+static void virtio_dev_shutdown(struct device *_d)
+{
+	struct virtio_device *dev = dev_to_virtio(_d);
+	struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+
+	virtio_config_disable(dev);
+
+	drv->remove(dev);
+
+	/* Driver should have reset device. */
+	WARN_ON_ONCE(dev->config->get_status(dev));
+}
+
 static struct bus_type virtio_bus = {
 	.name  = "virtio",
 	.match = virtio_dev_match,
@@ -276,6 +289,7 @@ static struct bus_type virtio_bus = {
 	.uevent = virtio_uevent,
 	.probe = virtio_dev_probe,
 	.remove = virtio_dev_remove,
+	.shutdown = virtio_dev_shutdown,
 };
 
 bool virtio_device_is_legacy_only(struct virtio_device_id id)
