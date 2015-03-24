@@ -2019,7 +2019,7 @@ static int read_capacity_16(struct scsi_disk *sdkp, struct scsi_device *sdp,
 	if (the_result) {
 		sd_print_result(sdkp, "Read Capacity(16) failed", the_result);
 		read_capacity_error(sdkp, sdp, &sshdr, sense_valid, the_result);
-		return -EINVAL;
+		return -EIO;
 	}
 
 	sector_size = get_unaligned_be32(&buffer[8]);
@@ -2101,7 +2101,7 @@ static int read_capacity_10(struct scsi_disk *sdkp, struct scsi_device *sdp,
 	if (the_result) {
 		sd_print_result(sdkp, "Read Capacity(10) failed", the_result);
 		read_capacity_error(sdkp, sdp, &sshdr, sense_valid, the_result);
-		return -EINVAL;
+		return -EIO;
 	}
 
 	sector_size = get_unaligned_be32(&buffer[4]);
