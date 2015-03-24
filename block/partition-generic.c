@@ -427,11 +427,11 @@ rescan:
 		return res;
 
 	if (disk->fops->revalidate_disk)
-		disk->fops->revalidate_disk(disk);
+		res = disk->fops->revalidate_disk(disk);
 	check_disk_size_change(disk, bdev);
 	bdev->bd_invalidated = 0;
-	if (!get_capacity(disk) || !(state = check_partition(disk, bdev)))
-		return 0;
+	if (res || !get_capacity(disk) || !(state = check_partition(disk, bdev)))
+		return res;
 	if (IS_ERR(state)) {
 		/*
 		 * I/O error reading the partition table.  If any
