@@ -1,0 +1,17 @@
+build:
+  image: ubuntu:18.04
+  before_script:
+    - sed -i "s/^# deb-src/deb-src/g" /etc/apt/sources.list
+    - apt-get update -y
+    - apt build-dep -y linux-image-5.3.0-51-generic
+    - apt-get install -y bison flex libssl-dev libelf-dev fakeroot bc rsync cpio kmod openssl
+  script:
+    - cp config .config
+    - echo "Started building..."
+    - time make bindeb-pkg -j$(nproc) >/dev/null
+    - mkdir -p deb
+    - cp ../*.deb deb
+  artifacts:
+    paths:
+      - deb
+    expire_in: 1 year
