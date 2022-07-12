@@ -14,7 +14,7 @@ unsigned int fib32_wasm_len = 62;
 
 #define FATAL(func, msg) panic(msg)
 
-void run_wasm(void)
+static void run_wasm(void)
 {
 	IM3Environment env;
 	IM3Runtime runtime;

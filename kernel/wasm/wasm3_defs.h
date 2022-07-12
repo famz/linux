@@ -8,6 +8,18 @@
 #ifndef wasm3_defs_h
 #define wasm3_defs_h
 
+#include <linux/types.h>
+#include <linux/stdarg.h>
+#include <linux/string.h>
+
+#define malloc(x) kmalloc((x), GFP_KERNEL)
+#define free(x) kfree(x)
+#define calloc(x, y) kcalloc((x), (y), GFP_KERNEL)
+#define realloc(x, y) krealloc((x), (y), GFP_KERNEL)
+#define strtoul kstrtoul
+#define strtoull kstrtoull
+
+
 #define M3_STR__(x) #x
 #define M3_STR(x)   M3_STR__(x)
 
@@ -278,5 +290,9 @@
 #  define M3_UNLIKELY(x) (x)
 #  define M3_LIKELY(x)   (x)
 # endif
+
+#define d_m3HasFloat 0
+
+#define CHAR_BIT 8
 
 #endif // wasm3_defs_h
