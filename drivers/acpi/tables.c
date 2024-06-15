@@ -715,6 +715,7 @@ void __init acpi_reserve_initial_tables(void)
 {
 	int i;
 
+	pr_warn("acpi_reserve_initial_tables begin\n");
 	for (i = 0; i < ACPI_MAX_TABLES; i++) {
 		struct acpi_table_desc *table_desc = &initial_tables[i];
 		u64 start = table_desc->address;
@@ -726,8 +727,10 @@ void __init acpi_reserve_initial_tables(void)
 		pr_info("Reserving %4s table memory at [mem 0x%llx-0x%llx]\n",
 			table_desc->signature.ascii, start, start + size - 1);
 
+		pr_warn("memblock reserve %llx %llx\n", start, size);
 		memblock_reserve(start, size);
 	}
+	pr_warn("acpi_reserve_initial_tables end\n");
 }
 
 void __init acpi_table_init_complete(void)
