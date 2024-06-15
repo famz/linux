@@ -1078,41 +1078,60 @@ void __init setup_arch(char **cmdline_p)
 		}
 	}
 
+	pr_warn("boot: reserve_initrd\n");
 	reserve_initrd();
 
+	pr_warn("boot: acpi_table_upgrade\n");
 	acpi_table_upgrade();
 	/* Look for ACPI tables and reserve memory occupied by them. */
+	pr_warn("boot: acpi_boot_table_init\n");
 	acpi_boot_table_init();
 
+	pr_warn("boot: vsmp_init\n");
 	vsmp_init();
 
+	pr_warn("boot: io_delay_init\n");
 	io_delay_init();
 
+	pr_warn("boot: early_platform_quirks\n");
 	early_platform_quirks();
 
 	/* Some platforms need the APIC registered for NUMA configuration */
+	pr_warn("boot: early_acpi_boot_init\n");
 	early_acpi_boot_init();
+
+	pr_warn("boot: early_parse_smp_cfg\n");
 	x86_init.mpparse.early_parse_smp_cfg();
 
+	pr_warn("boot: x86_flattree_get_config\n");
 	x86_flattree_get_config();
 
+	pr_warn("boot: initmem_init\n");
 	initmem_init();
+	pr_warn("boot: dma_contiguous_reserve\n");
 	dma_contiguous_reserve(max_pfn_mapped << PAGE_SHIFT);
 
-	if (boot_cpu_has(X86_FEATURE_GBPAGES))
+	if (boot_cpu_has(X86_FEATURE_GBPAGES)) {
+		pr_warn("boot: hugetlb_cma_reserv\n");
 		hugetlb_cma_reserve(PUD_SHIFT - PAGE_SHIFT);
+	}
 
 	/*
 	 * Reserve memory for crash kernel after SRAT is parsed so that it
 	 * won't consume hotpluggable memory.
 	 */
+	pr_warn("boot: arch_reserve_crashkernel\n");
 	arch_reserve_crashkernel();
 
-	if (!early_xdbc_setup_hardware())
+	if (!early_xdbc_setup_hardware()) {
+		pr_warn("boot: early_xdbc_register_console\n");
 		early_xdbc_register_console();
+	}
 
+	pr_warn("boot: pagetable_init\n");
 	x86_init.paging.pagetable_init();
 
+	pr_warn("boot: kasan_init\n");
 	kasan_init();
 
 	/*
@@ -1121,42 +1140,61 @@ void __init setup_arch(char **cmdline_p)
 	 * FIXME: Can the later sync in setup_cpu_entry_areas() replace
 	 * this call?
 	 */
+	pr_warn("boot: sync_initial_page_table\n");
 	sync_initial_page_table();
 
+	pr_warn("boot: tboot_probe\n");
 	tboot_probe();
 
+	pr_warn("boot: map_vsyscall\n");
 	map_vsyscall();
 
+	pr_warn("boot: x86_32_probe_apic\n");
 	x86_32_probe_apic();
 
+	pr_warn("boot: early_quirks\n");
 	early_quirks();
 
+	pr_warn("boot: topology_apply_cmdline_limits_early\n");
 	topology_apply_cmdline_limits_early();
 
 	/*
 	 * Parse SMP configuration. Try ACPI first and then the platform
 	 * specific parser.
 	 */
+	pr_warn("boot: acpi_boot_init\n");
 	acpi_boot_init();
+	pr_warn("boot: parse_smp_cfg\n");
 	x86_init.mpparse.parse_smp_cfg();
 
 	/* Last opportunity to detect and map the local APIC */
+	pr_warn("boot: init_apic_mappings\n");
 	init_apic_mappings();
 
+	pr_warn("boot: topology_init_possible_cpus\n");
 	topology_init_possible_cpus();
 
+	pr_warn("boot: init_cpu_to_node\n");
 	init_cpu_to_node();
+	pr_warn("boot: init_gi_nodes\n");
 	init_gi_nodes();
 
+	pr_warn("boot: io_apic_init_mappings\n");
 	io_apic_init_mappings();
 
+	pr_warn("boot: guest_late_init\n");
 	x86_init.hyper.guest_late_init();
 
+	pr_warn("boot: e820__reserve_resources\n");
 	e820__reserve_resources();
+
+	pr_warn("boot: e820__register_nosave_regions\n");
 	e820__register_nosave_regions(max_pfn);
 
+	pr_warn("boot: reserve_resources\n");
 	x86_init.resources.reserve_resources();
 
+	pr_warn("boot: e820__setup_pci_gap\n");
 	e820__setup_pci_gap();
 
 #ifdef CONFIG_VT
@@ -1165,8 +1203,10 @@ void __init setup_arch(char **cmdline_p)
 		vgacon_register_screen(&screen_info);
 #endif
 #endif
+	pr_warn("boot: oem banner\n");
 	x86_init.oem.banner();
 
+	pr_warn("boot: wallclock_init\n");
 	x86_init.timers.wallclock_init();
 
 	/*
@@ -1175,10 +1215,13 @@ void __init setup_arch(char **cmdline_p)
 	 * leading to softlockups on machines which have configured SMI
 	 * interrupt delivery.
 	 */
+	pr_warn("boot: therm_lvt_init\n");
 	therm_lvt_init();
 
+	pr_warn("boot: mcheck_init\n");
 	mcheck_init();
 
+	pr_warn("boot: register_refined_jiffies\n");
 	register_refined_jiffies(CLOCK_TICK_RATE);
 
 #ifdef CONFIG_EFI
@@ -1186,6 +1229,7 @@ void __init setup_arch(char **cmdline_p)
 		efi_apply_memmap_quirks();
 #endif
 
+	pr_warn("boot: unwind_init\n");
 	unwind_init();
 }
 
